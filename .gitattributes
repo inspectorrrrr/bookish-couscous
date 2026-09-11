@@ -1,0 +1,4 @@
+# Shell-скрипт запуска должен всегда сохраняться с LF (даже на Windows)
+run-tests.sh text eol=lf
+*.py text eol=crlf
+*.bat text eol=crlf

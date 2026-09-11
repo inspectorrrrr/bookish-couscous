@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Результаты прогонов тестов (скачанные сметы)
+artifacts/
