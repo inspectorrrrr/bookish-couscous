@@ -92,8 +92,16 @@ def _switch_tab(page, tab_name):
 def _apply_tariffs(page, scenario):
     if not scenario.cloud and not scenario.onprem:
         raise ScenarioError("не задан ни один тариф")
-    _toggle_tariff(page, "#tariff-cloud", scenario.cloud)
-    _toggle_tariff(page, "#tariff-onprem", scenario.onprem)
+    # Порядок важен: ensureAtLeastOneTariff() в JS не даёт выключить оба тарифа.
+    # Сначала включаем нужные, потом выключаем лишние.
+    if scenario.cloud:
+        _toggle_tariff(page, "#tariff-cloud", True)
+    if scenario.onprem:
+        _toggle_tariff(page, "#tariff-onprem", True)
+    if not scenario.cloud:
+        _toggle_tariff(page, "#tariff-cloud", False)
+    if not scenario.onprem:
+        _toggle_tariff(page, "#tariff-onprem", False)
 
 
 def _apply_meta(page, scenario):

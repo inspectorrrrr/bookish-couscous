@@ -417,18 +417,20 @@ def t10_export_integrity(ctx, result):
     """
     Целостность выгруженного файла. Документированные баги стенда:
       * при выгрузке «только Облако» остаются строки шаблона ЭКСЕЛЬ
-        (дублирующийся резерв T&M 450 000 ₽ и старые строки «Конфигурации ПО»).
+        (дублирующийся резерв T&M 450 000 ₽ и старые строки «Конфигурации ПО»);
+      * при выгрузке «только Коробка» секция SAAS (Облако) не скрывается.
     Кейс намеренно «красный», пока стенд не починят: он показывает,
     что тест реально проверяет файл, а не доверяет приложению.
     """
-    for scenario_name in ("cloud_default", "full_project"):
+    for scenario_name in ("cloud_default", "full_project", "minimal", "onprem_only"):
         scenario = SCENARIOS[scenario_name]
         workbook, worksheet, sheet, filename = _load_sheet(ctx.exporter, scenario)
         prefix = "«%s»: " % scenario_name
 
         blocks = X.find_tm_blocks(sheet)
-        result.add(prefix + "в файле ровно один блок «Резерв на N чч»",
-                   len(blocks) == 1,
+        ok_block = len(blocks) == 1 and blocks[0]["col3"] is not None and blocks[0]["col5"] is not None
+        result.add(prefix + "ровно один блок «Резерв на N чч» с заполненными суммами",
+                   ok_block,
                    "найдено: %r" % [(b["col2"], b["row"]) for b in blocks])
 
         known = set()
@@ -451,6 +453,33 @@ def t10_export_integrity(ctx, result):
         result.add(prefix + "не осталось демо-значений шаблона (450 000 ₽)",
                    not stale,
                    "демо-значения: %r" % stale)
+
+        tm_titles = X.find_tm_titles(sheet)
+        result.add(prefix + "заголовок «Time&Material» встречается ровно один раз",
+                   len(tm_titles) == 1,
+                   "строки с заголовком: %r" % tm_titles)
+
+        stale_tm = X.find_stale_tm_data(sheet)
+        result.add(prefix + "не осталось шаблонного TM-блока с НДС 22 500 ₽",
+                   not stale_tm,
+                   "шаблонные TM-строки: %r" % stale_tm)
+
+        anchors = X.merged_numeric_anchors(worksheet)
+        result.add(prefix + "нет объединённых ячеек с числом (признак данных T&M, записанных в ячейку шаблона)",
+                   not anchors,
+                   "объединённые ячейки с числовым значением: %r" % anchors)
+
+    # отдельные проверки для onprem_only
+    scenario = SCENARIOS["onprem_only"]
+    workbook, worksheet, sheet, filename = _load_sheet(ctx.exporter, scenario)
+    sections = X.extract_sections(sheet)
+    result.add("«только Коробка»: в файле не выгружается секция Облако с данными",
+               [s.tariff_label for s in sections] == ["onprem"]
+               or not X.saas_section_has_data(sheet),
+               "секции: %r" % [s.tariff_label for s in sections])
+    footers = X.count_rows(sheet, "On-premise лицензии - бессрочные")
+    result.add("«только Коробка»: футер «On-premise лицензии…» встречается ровно один раз",
+               footers == 1, "футеров на листе: %d" % footers)
 
 
 # ---------------------------------------------------------------------------

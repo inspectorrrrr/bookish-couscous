@@ -275,3 +275,77 @@ def find_stale_template_values(ws):
             if isinstance(v, (int, float)) and abs(v - 450000) < 0.001:
                 issues.append("строке %s осталось демо-значение шаблона %s" % (r, 450000))
     return issues
+
+
+def find_tm_titles(sheet_):
+    """Все строки с заголовком «Time&Material» в колонке B или в объединённом заголовке A."""
+    out = []
+    for r in range(1, sheet_.max_row() + 1):
+        if sheet_.text(r, 2) == TM_TITLE or sheet_.text(r, 1).startswith(TM_TITLE):
+            out.append(r)
+    return out
+
+
+def is_cell_merged(ws, row, col):
+    """Проверяет, является ли ячейка частью объединённого диапазона."""
+    for merged_range in ws.merged_cells.ranges:
+        if (merged_range.min_row <= row <= merged_range.max_row
+                and merged_range.min_col <= col <= merged_range.max_col):
+            return True
+    return False
+
+
+def find_stale_tm_data(sheet_):
+    """
+    Ищет строки шаблонного TM-блока: «Резерв на N чч» с НДС 22 500 ₽
+    (шаблонный расчёт 100 чч × 4500 ₽ × 5% = 22 500 ₽). Приложение пишет
+    своё значение НДС, поэтому 22500 — признак невычищенной строки шаблона.
+    """
+    issues = []
+    for r in range(1, sheet_.max_row() + 1):
+        text = sheet_.text(r, 2)
+        if not text.startswith(RESERVE_PREFIX):
+            continue
+        d_val = sheet_.num(r, 4)
+        if d_val is not None and abs(d_val - 22500) < 0.01:
+            issues.append("строка %d: шаблонный TM-блок «%s» с НДС %s" % (r, text, d_val))
+    return issues
+
+
+def merged_numeric_anchors(ws):
+    """
+    Объединённые диапазоны, у которых в «главной» ячейке лежит число.
+    Так выглядят данные, попавшие в объединённую ячейку шаблона:
+    значение пишется не в текст, а как индекс (число) — например, строка
+    «Резерв», записанная приложением в шёблонный футер A35:E35.
+    """
+    out = []
+    for merged_range in sorted(ws.merged_cells.ranges, key=lambda r: (r.min_row, r.min_col)):
+        if merged_range.min_col != 1 or merged_range.max_col <= merged_range.min_col:
+            continue
+        anchor = ws.cell(row=merged_range.min_row, column=merged_range.min_col).value
+        if isinstance(anchor, (int, float)) and not isinstance(anchor, bool):
+            out.append((merged_range.coord, anchor))
+    return out
+
+
+def count_rows(sheet_, prefix, col=1):
+    """Число строк, где текст в колонке col начинается с prefix."""
+    count = 0
+    for r in range(1, sheet_.max_row() + 1):
+        if sheet_.text(r, col).startswith(prefix):
+            count += 1
+    return count
+
+
+def saas_section_has_data(sheet_):
+    """Проверяет, есть ли в секции SAAS (Yandex.Cloud) заполненные строки данных."""
+    for section in extract_sections(sheet_):
+        if section.tariff_label == "cloud":
+            data_rows = [r for r in section.rows
+                         if r["col2"] and r["col2"] != TOTAL_TEXT
+                         and not r["col2"].startswith("Пакет простых")
+                         and not r["col2"].startswith("Дополнительно: модуль")
+                         and not r["col2"].startswith("Скидка")]
+            return len(data_rows) > 0
+    return False
